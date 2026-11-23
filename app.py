@@ -1,188 +1,149 @@
 import os
-from datetime import timedelta
 from functools import wraps
-from flask import Flask, request, session, redirect, jsonify, render_template_string
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "local-demo-only-change-this-key")
-app.permanent_session_lifetime = timedelta(days=7)
-app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
-    # Render serves HTTPS; Flask will set secure cookies behind its proxy.
-    SESSION_COOKIE_SECURE=os.environ.get("RENDER", "") == "true",
-)
+app.secret_key = os.environ.get("SECRET_KEY", "development-only-change-me")
+LAB_ACCESS_KEY = os.environ.get("LAB_ACCESS_KEY", "")
 
 USERS = {
-    "wiener": {"password": "peter", "role": "user", "email": "wiener@lab.test", "display_name": "Wiener"},
-    "carlos": {"password": "montoya", "role": "user", "email": "carlos@lab.test", "display_name": "Carlos"},
-    "alice": {"password": "wonderland", "role": "user", "email": "alice@lab.test", "display_name": "Alice"},
-    "admin": {"password": "admin123", "role": "admin", "email": "admin@lab.test", "display_name": "Training Admin"},
+    "wiener": {"name": "Peter Wiener", "role": "user", "email": "wiener@example.test"},
+    "carlos": {"name": "Carlos Montoya", "role": "user", "email": "carlos@example.test"},
+    "alice": {"name": "Alice", "role": "manager", "email": "alice@example.test"},
+    "admin": {"name": "Lab Admin", "role": "admin", "email": "admin@example.test"},
 }
-
 ORDERS = {
-    "1001": {"owner": "wiener", "item": "Laptop", "status": "Shipped"},
-    "1002": {"owner": "carlos", "item": "Phone", "status": "Processing"},
-    "1003": {"owner": "alice", "item": "Tablet", "status": "Delivered"},
-}
-INVOICES = {
-    "INV-001": {"owner": "wiener", "amount": 120, "text": "Wiener training invoice"},
-    "INV-002": {"owner": "carlos", "amount": 450, "text": "Carlos training invoice"},
-    "INV-003": {"owner": "alice", "amount": 230, "text": "Alice training invoice"},
+    "1001": {"owner": "wiener", "item": "Notebook Pro", "status": "Processing", "total": "€49.90"},
+    "1002": {"owner": "carlos", "item": "Wireless Headphones", "status": "Shipped", "total": "€89.00"},
+    "1003": {"owner": "alice", "item": "USB-C Dock", "status": "Delivered", "total": "€129.00"},
 }
 MESSAGES = {
-    "501": {"owner": "wiener", "text": "Private training message for Wiener"},
-    "502": {"owner": "carlos", "text": "Private training message for Carlos"},
-    "503": {"owner": "alice", "text": "Private training message for Alice"},
+    "501": {"owner": "wiener", "subject": "Welcome to the lab", "body": "This is Peter's fictional training message."},
+    "502": {"owner": "carlos", "subject": "Order update", "body": "This is Carlos's fictional training message."},
 }
-FILES = {
-    "file-01": {"owner": "wiener", "name": "wiener-document.txt", "content": "Fictional Wiener training document"},
-    "file-02": {"owner": "carlos", "name": "carlos-document.txt", "content": "Fictional Carlos training document"},
-    "file-03": {"owner": "alice", "name": "alice-document.txt", "content": "Fictional Alice training document"},
-}
+LESSONS = [
+    {"n": 1, "title": "Co je IDOR / BOLA", "level": "Začátečník", "desc": "Objekt, vlastník, identifikátor a kontrola oprávnění.", "status": "Připraveno"},
+    {"n": 2, "title": "První test v Burp Repeater", "level": "Začátečník", "desc": "Zachycení požadavku a bezpečná změna identifikátoru.", "status": "Připraveno"},
+    {"n": 3, "title": "Jeden objekt – mnoho endpointů", "level": "Mírně pokročilý", "desc": "Mapování všech operací nad jedním objektem.", "status": "Připraveno"},
+    {"n": 4, "title": "ID v URL, query a JSON těle", "level": "Mírně pokročilý", "desc": "Hledání identifikátorů v různých částech HTTP požadavku.", "status": "Připravuje se"},
+    {"n": 5, "title": "UUID a nepředvídatelné identifikátory", "level": "Mírně pokročilý", "desc": "Proč UUID nenahrazuje kontrolu oprávnění.", "status": "Připravuje se"},
+]
 
-PAGE = """
-<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>IDOR Training Lab</title>
-<style>
-body{font-family:Arial,sans-serif;background:#eef2f7;color:#1f2937;margin:0;padding:24px}
-main{max-width:900px;margin:20px auto;background:white;padding:24px;border-radius:12px;box-shadow:0 4px 18px #0001}
-h1{margin-top:0} .note{background:#fff7d6;padding:12px;border-radius:8px}
-button,a.btn{display:inline-block;margin:6px 6px 6px 0;padding:10px 14px;background:#2457a7;color:white;border:0;border-radius:6px;text-decoration:none;cursor:pointer}
-code{background:#edf0f5;padding:3px 5px;border-radius:4px} li{margin:9px 0}
-small{color:#586579}
-</style></head><body><main>
-<h1>🧪 IDOR Training Lab</h1>
-<p class="note"><b>Authorized training only.</b> This lab intentionally contains access-control flaws and uses fictional data. Do not enter real personal information or reuse real passwords. Keep this demo private to your own learning group.</p>
-{% if user %}
-<p>Signed in as <b>{{ user }}</b> — role: <b>{{ role }}</b></p>
-<a class="btn" href="/logout">Log out</a>
-<h2>Endpoint map</h2>
-<ul>
-<li><code>GET /api/profile?user_id=wiener</code> — profile lookup</li>
-<li><code>GET /api/orders/1001</code> — read order</li>
-<li><code>POST /api/orders/1001/status</code> — change order status (JSON: {"status":"Processing"})</li>
-<li><code>GET /api/invoices/INV-001</code> — read invoice</li>
-<li><code>GET /api/messages/501</code> — read message</li>
-<li><code>GET /api/files/file-01</code> — read file metadata/content</li>
-<li><code>GET /api/admin/users</code> — admin user listing</li>
-<li><code>GET /api</code> — endpoint inventory</li>
-</ul>
-<p>Use Burp Suite Proxy → HTTP history → Send to Repeater. Compare objects owned by different fictional users.</p>
-<h2>Training accounts</h2>
-<ul>{% for name in accounts %}<li><b>{{name}}</b> — demo password: <code>{{passwords[name]}}</code></li>{% endfor %}</ul>
-{% else %}
-<h2>Choose a fictional training account</h2>
-<p>These quick-login buttons are provided to make the lab easy to use. They are not real accounts.</p>
-{% for name in accounts %}
-<form method="post" action="/login"><input type="hidden" name="username" value="{{name}}">
-<button type="submit">Log in as {{name}}</button></form>
-{% endfor %}
-{% endif %}
-<hr><small>Training build 1.0 · Fictional records only · No real customer data</small>
-</main></body></html>
-"""
-
-def login_required(fn):
+def lab_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        if "user" not in session:
-            return jsonify({"error": "Login required"}), 401
+        if not session.get("lab_access"):
+            return redirect(url_for("access"))
         return fn(*args, **kwargs)
     return wrapper
 
-@app.route("/")
-def home():
-    user = session.get("user")
-    role = USERS[user]["role"] if user in USERS else None
-    return render_template_string(
-        PAGE, user=user, role=role,
-        accounts=list(USERS),
-        passwords={name: data["password"] for name, data in USERS.items()}
-    )
+@app.route("/", methods=["GET"])
+def index():
+    return render_template("index.html")
 
-@app.route("/login", methods=["POST"])
-def login():
-    username = request.form.get("username", "")
-    if username not in USERS:
-        return "Unknown training user", 400
+@app.route("/access", methods=["GET", "POST"])
+def access():
+    if request.method == "POST":
+        if not LAB_ACCESS_KEY:
+            flash("Laboratoř zatím není zabezpečena. Nastavte v Renderu proměnnou LAB_ACCESS_KEY.", "error")
+        elif request.form.get("access_key", "") == LAB_ACCESS_KEY:
+            session["lab_access"] = True
+            flash("Přístup do výukové laboratoře povolen.", "success")
+            return redirect(url_for("dashboard"))
+        else:
+            flash("Přístupový klíč není správný.", "error")
+    return render_template("access.html", configured=bool(LAB_ACCESS_KEY))
+
+@app.route("/leave")
+def leave():
     session.clear()
-    session.permanent = True
-    session["user"] = username
-    return redirect("/")
+    return redirect(url_for("index"))
 
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/")
+@app.route("/dashboard")
+@lab_required
+def dashboard():
+    return render_template("dashboard.html", users=USERS, orders=ORDERS, lessons=LESSONS)
 
-# INTENTIONALLY VULNERABLE training endpoint: no object-level authorization.
-@app.route("/api/profile")
-@login_required
+@app.route("/lessons")
+@lab_required
+def lessons():
+    return render_template("lessons.html", lessons=LESSONS)
+
+@app.route("/lessons/<int:number>")
+@lab_required
+def lesson_detail(number):
+    lesson = next((x for x in LESSONS if x["n"] == number), None)
+    if not lesson:
+        return "Lekce nebyla nalezena", 404
+    return render_template("lesson.html", lesson=lesson)
+
+@app.route("/lab")
+@lab_required
+def lab_home():
+    return render_template("lab.html", users=USERS, orders=ORDERS)
+
+@app.route("/lab/profile")
+@lab_required
 def profile():
-    user_id = request.args.get("user_id", "")
-    if user_id not in USERS:
-        return jsonify({"error": "User not found"}), 404
-    return jsonify({"user_id": user_id, **USERS[user_id]})
+    user_id = request.args.get("user_id", "wiener")
+    # INTENTIONALLY VULNERABLE TRAINING ENDPOINT: missing ownership check.
+    user = USERS.get(user_id)
+    if not user:
+        return "Profil nenalezen", 404
+    return render_template("profile.html", user=user, user_id=user_id)
+
+@app.route("/lab/orders/<order_id>")
+@lab_required
+def order_detail(order_id):
+    # INTENTIONALLY VULNERABLE TRAINING ENDPOINT: missing ownership check.
+    order = ORDERS.get(order_id)
+    if not order:
+        return "Objednávka nenalezena", 404
+    return render_template("order.html", order=order, order_id=order_id)
+
+@app.route("/lab/messages/<message_id>")
+@lab_required
+def message_detail(message_id):
+    # INTENTIONALLY VULNERABLE TRAINING ENDPOINT: missing ownership check.
+    message = MESSAGES.get(message_id)
+    if not message:
+        return "Zpráva nenalezena", 404
+    return render_template("message.html", message=message, message_id=message_id)
+
+@app.route("/api/profile")
+@lab_required
+def api_profile():
+    user_id = request.args.get("user_id", "wiener")
+    # INTENTIONALLY VULNERABLE TRAINING ENDPOINT: missing ownership check.
+    user = USERS.get(user_id)
+    if not user:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify({"user_id": user_id, **user})
 
 @app.route("/api/orders/<order_id>")
-@login_required
-def order(order_id):
-    if order_id not in ORDERS:
-        return jsonify({"error": "Order not found"}), 404
-    return jsonify({"order_id": order_id, **ORDERS[order_id]})
+@lab_required
+def api_order(order_id):
+    # INTENTIONALLY VULNERABLE TRAINING ENDPOINT: missing ownership check.
+    order = ORDERS.get(order_id)
+    if not order:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify({"order_id": order_id, **order})
 
-@app.route("/api/orders/<order_id>/status", methods=["POST"])
-@login_required
-def update_order(order_id):
-    if order_id not in ORDERS:
-        return jsonify({"error": "Order not found"}), 404
-    payload = request.get_json(silent=True) or {}
-    new_status = str(payload.get("status", "Processing"))[:40]
-    ORDERS[order_id]["status"] = new_status
-    return jsonify({"updated": True, "order_id": order_id, "status": new_status})
-
-@app.route("/api/invoices/<invoice_id>")
-@login_required
-def invoice(invoice_id):
-    if invoice_id not in INVOICES:
-        return jsonify({"error": "Invoice not found"}), 404
-    return jsonify({"invoice_id": invoice_id, **INVOICES[invoice_id]})
-
-@app.route("/api/messages/<message_id>")
-@login_required
-def message(message_id):
-    if message_id not in MESSAGES:
-        return jsonify({"error": "Message not found"}), 404
-    return jsonify({"message_id": message_id, **MESSAGES[message_id]})
-
-@app.route("/api/files/<file_id>")
-@login_required
-def file(file_id):
-    if file_id not in FILES:
-        return jsonify({"error": "File not found"}), 404
-    return jsonify({"file_id": file_id, **FILES[file_id]})
-
-@app.route("/api/admin/users")
-@login_required
-def admin_users():
-    return jsonify(USERS)
-
-@app.route("/api")
-@login_required
-def api_index():
-    return jsonify({
-        "profile": "/api/profile?user_id=wiener",
-        "orders": ["/api/orders/1001", "/api/orders/1002", "/api/orders/1003"],
-        "invoices": ["/api/invoices/INV-001", "/api/invoices/INV-002", "/api/invoices/INV-003"],
-        "messages": ["/api/messages/501", "/api/messages/502", "/api/messages/503"],
-        "files": ["/api/files/file-01", "/api/files/file-02", "/api/files/file-03"],
-    })
+@app.route("/endpoint-map")
+@lab_required
+def endpoint_map():
+    endpoints = [
+        ("GET", "/lab/profile?user_id=...", "Profil uživatele", "IDOR – query parameter"),
+        ("GET", "/lab/orders/<order_id>", "Detail objednávky", "IDOR – path parameter"),
+        ("GET", "/lab/messages/<message_id>", "Detail zprávy", "IDOR – path parameter"),
+        ("GET", "/api/profile?user_id=...", "JSON profil", "API / query parameter"),
+        ("GET", "/api/orders/<order_id>", "JSON objednávka", "API / path parameter"),
+    ]
+    return render_template("endpoint_map.html", endpoints=endpoints)
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "app": "IDOR Training Lab"})
+    return jsonify({"status": "ok", "app": "IDOR Training Lab PRO"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "10000")))

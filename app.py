@@ -13,9 +13,9 @@ USERS = {
     "admin": {"name": "Lab Admin", "role": "admin", "email": "admin@example.test"},
 }
 ORDERS = {
-    "1001": {"owner": "wiener", "item": "Notebook Pro", "status": "Processing", "total": "€49.90"},
-    "1002": {"owner": "carlos", "item": "Wireless Headphones", "status": "Shipped", "total": "€89.00"},
-    "1003": {"owner": "alice", "item": "USB-C Dock", "status": "Delivered", "total": "€129.00"},
+    "1001": {"owner": "wiener", "item": "Notebook Pro", "status": "Processing", "total": "€49.90", "delivery_address": "Testovací ulice 1"},
+    "1002": {"owner": "carlos", "item": "Wireless Headphones", "status": "Shipped", "total": "€89.00", "delivery_address": "Testovací ulice 2"},
+    "1003": {"owner": "alice", "item": "USB-C Dock", "status": "Delivered", "total": "€129.00", "delivery_address": "Testovací ulice 3"},
 }
 MESSAGES = {
     "501": {"owner": "wiener", "subject": "Welcome to the lab", "body": "This is Peter's fictional training message."},
@@ -101,6 +101,26 @@ def order_detail(order_id):
         return "Objednávka nenalezena", 404
     return render_template("order.html", order=order, order_id=order_id)
 
+@app.route("/api/orders/<order_id>", methods=["POST"])
+@lab_required
+def update_order(order_id):
+    # INTENTIONALLY VULNERABLE TRAINING ENDPOINT: no object-ownership check.
+    # This endpoint is available only after the separate lab access key is entered.
+    order = ORDERS.get(order_id)
+    if not order:
+        return jsonify({"error": "not_found"}), 404
+    data = request.get_json(silent=True) or request.form
+    allowed_statuses = {"Processing", "Shipped", "Delivered", "Cancelled"}
+    new_status = data.get("status")
+    new_address = data.get("delivery_address")
+    if new_status:
+        if new_status not in allowed_statuses:
+            return jsonify({"error": "invalid_status"}), 400
+        order["status"] = new_status
+    if new_address:
+        order["delivery_address"] = str(new_address)[:120]
+    return jsonify({"message": "updated", "order_id": order_id, **order})
+
 @app.route("/lab/messages/<message_id>")
 @lab_required
 def message_detail(message_id):
@@ -137,7 +157,8 @@ def endpoint_map():
         ("GET", "/lab/orders/<order_id>", "Detail objednávky", "IDOR – path parameter"),
         ("GET", "/lab/messages/<message_id>", "Detail zprávy", "IDOR – path parameter"),
         ("GET", "/api/profile?user_id=...", "JSON profil", "API / query parameter"),
-        ("GET", "/api/orders/<order_id>", "JSON objednávka", "API / path parameter"),
+        ("GET", "/api/orders/<order_id>", "JSON objednávka", "IDOR – čtení objektu"),
+        ("POST", "/api/orders/<order_id>", "Změna stavu / doručovací adresy", "Write IDOR – záměrně zranitelné v oddělené laboratoři"),
     ]
     return render_template("endpoint_map.html", endpoints=endpoints)
 

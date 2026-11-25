@@ -23,3 +23,7 @@ Nejde o skutečné přihlašovací účty ani hesla.
 
 ## Rozsah
 Všechny záměrně zranitelné cesty jsou pod `/lab/` nebo `/api/` a vyžadují nejprve přístup do chráněné laboratoře.
+
+
+## Write IDOR training module
+The order detail page includes a deliberately vulnerable form that sends POST requests to `/api/orders/<order_id>`. It can change the fictional order status and delivery address. The endpoint intentionally omits an object-ownership check so learners can observe a Write IDOR in Burp Repeater. Keep the service protected by a strong `LAB_ACCESS_KEY` and `SECRET_KEY`; use only fictional lab data. Do not deploy this vulnerable training app publicly without the access gate.

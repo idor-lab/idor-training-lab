@@ -1,1 +1,28 @@
-{% extends "base.html" %}{% block content %}<div class="eyebrow">LAB OBJECT · ORDER</div><h1>Objednávka #{{order_id}}</h1><div class="panel"><div class="detailline"><span>Vlastník</span><b>{{order.owner}}</b></div><div class="detailline"><span>Položka</span><b>{{order.item}}</b></div><div class="detailline"><span>Stav</span><b>{{order.status}}</b></div><div class="detailline"><span>Celkem</span><b>{{order.total}}</b></div></div><div class="notice">Identifikátor objektu je součástí cesty: <code>/lab/orders/{{order_id}}</code>. Ověřuj vlastnictví pouze mezi fiktivními testovacími objekty.</div><a class="btn secondary" href="/lab">← Zpět do laboratoře</a>{% endblock %}
+{% extends "base.html" %}{% block content %}
+<div class="eyebrow">LAB OBJECT · ORDER</div>
+<h1>Objednávka #{{order_id}}</h1>
+<div class="panel">
+  <div class="detailline"><span>Vlastník</span><b>{{order.owner}}</b></div>
+  <div class="detailline"><span>Položka</span><b>{{order.item}}</b></div>
+  <div class="detailline"><span>Stav</span><b>{{order.status}}</b></div>
+  <div class="detailline"><span>Doručovací adresa</span><b>{{order.delivery_address}}</b></div>
+  <div class="detailline"><span>Celkem</span><b>{{order.total}}</b></div>
+</div>
+<section class="panel" style="margin-top:18px">
+  <h2>Tréninková změna objednávky</h2>
+  <p class="muted">Formulář odešle POST požadavek na server. Zachytíš jej v Burp Proxy → HTTP history.</p>
+  <form method="post" action="/api/orders/{{order_id}}" class="edit-form">
+    <label for="status">Nový stav</label>
+    <select id="status" name="status">
+      <option value="Processing">Processing</option><option value="Shipped">Shipped</option>
+      <option value="Delivered">Delivered</option><option value="Cancelled">Cancelled</option>
+    </select>
+    <label for="delivery_address">Nová doručovací adresa</label>
+    <input id="delivery_address" name="delivery_address" value="{{order.delivery_address}}">
+    <button class="btn" type="submit">Odeslat změnu</button>
+  </form>
+</section>
+<div class="notice danger"><b>Upozornění:</b> Funkce je záměrně zranitelná pouze pro výuku. Testuj výhradně fiktivní objednávky v této laboratoři. Přístup je chráněn samostatným klíčem laboratoře.</div>
+<div class="notice">Identifikátor objektu je součástí cesty: <code>/api/orders/{{order_id}}</code>.</div>
+<a class="btn secondary" href="/lab">← Zpět do laboratoře</a>
+{% endblock %}

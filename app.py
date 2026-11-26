@@ -165,6 +165,21 @@ def endpoint_map():
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "app": "IDOR Training Lab PRO"})
+@app.route("/api/orders/<order_id>", methods=["DELETE"])
+@lab_required
+def delete_order(order_id):
+    # INTENTIONALLY VULNERABLE TRAINING ENDPOINT
+    order = ORDERS.get(order_id)
 
+    if not order:
+        return jsonify({"error": "not_found"}), 404
+
+    deleted_order = ORDERS.pop(order_id)
+
+    return jsonify({
+        "message": "deleted",
+        "order_id": order_id,
+        **deleted_order
+    })
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "10000")))

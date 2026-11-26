@@ -165,7 +165,7 @@ def endpoint_map():
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "app": "IDOR Training Lab PRO"})
-@app.route("/api/orders/<order_id>", methods=["DELETE"])
+@app.route("/lab/orders/<order_id>", methods=["DELETE"])
 @lab_required
 def delete_order(order_id):
     # INTENTIONALLY VULNERABLE TRAINING ENDPOINT

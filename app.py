@@ -121,6 +121,30 @@ def update_order(order_id):
         order["delivery_address"] = str(new_address)[:120]
     return jsonify({"message": "updated", "order_id": order_id, **order})
 
+@app.route("/api/orders/<url_order_id>/id-mismatch", methods=["POST"])
+@lab_required
+def id_mismatch_order(url_order_id):
+    data = request.get_json(silent=True) or {}
+
+    body_order_id = str(data.get("order_id", ""))
+    order = ORDERS.get(body_order_id)
+
+    if not order:
+        return jsonify({"error": "not_found"}), 404
+
+    new_address = data.get("delivery_address")
+    if new_address:
+        order["delivery_address"] = str(new_address)[:120]
+
+    return jsonify({
+        "message": "updated",
+        "url_order_id": url_order_id,
+        "body_order_id": body_order_id,
+        "order_id": body_order_id,
+        "owner": order.get("owner"),
+        "delivery_address": order.get("delivery_address")
+    })
+
 @app.route("/lab/messages/<message_id>")
 @lab_required
 def message_detail(message_id):
